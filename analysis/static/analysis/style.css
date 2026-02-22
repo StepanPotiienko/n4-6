@@ -1,0 +1,234 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap');
+
+:root {
+    --bg: #f4f6fb;
+    --card: #ffffff;
+    --ink: #182237;
+    --muted: #566277;
+    --border: #d8deea;
+    --accent: #1254ff;
+    --accent-2: #f85f2a;
+    --accent-3: #00a779;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    color: var(--ink);
+    background:
+        radial-gradient(circle at 0 0, rgba(18, 84, 255, 0.10), transparent 32%),
+        radial-gradient(circle at 100% 100%, rgba(248, 95, 42, 0.10), transparent 28%),
+        var(--bg);
+    font-family: "Manrope", sans-serif;
+}
+
+h1,
+h2,
+h3 {
+    margin: 0;
+    font-family: "Space Grotesk", sans-serif;
+}
+
+.page {
+    width: min(1260px, 94vw);
+    margin: 24px auto 44px;
+}
+
+.hero {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: linear-gradient(132deg, #ffffff 0%, #f0f4ff 100%);
+    box-shadow: 0 8px 22px rgba(19, 33, 60, 0.06);
+}
+
+.hero h1 {
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    margin-bottom: 8px;
+}
+
+.hero p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.panel {
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--card);
+    box-shadow: 0 6px 18px rgba(19, 33, 60, 0.05);
+}
+
+.controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    align-items: end;
+}
+
+.controls label {
+    display: grid;
+    gap: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.controls input,
+.controls select,
+.controls button,
+.button {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 0.9rem;
+    font-family: "Manrope", sans-serif;
+    text-decoration: none;
+    text-align: center;
+    background: #fff;
+    color: var(--ink);
+}
+
+.controls button,
+.button {
+    cursor: pointer;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(140deg, var(--accent) 0%, #3d79ff 100%);
+    border: 1px solid #0d47e0;
+}
+
+.controls button.secondary,
+.button.secondary {
+    color: var(--ink);
+    background: #f8faff;
+    border: 1px solid var(--border);
+}
+
+.grid {
+    display: grid;
+    gap: 14px;
+}
+
+.stats-grid {
+    margin-top: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.stat-card {
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+}
+
+.stat-card h3 {
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.stat-card p {
+    margin: 8px 0 4px;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.stat-card small {
+    color: var(--muted);
+}
+
+.stat-card.winner {
+    border: 1px solid rgba(0, 167, 121, 0.34);
+    background: linear-gradient(160deg, #f4fffb 0%, #ecfff7 100%);
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.89rem;
+}
+
+th,
+td {
+    border: 1px solid var(--border);
+    padding: 8px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #f1f5ff;
+    font-weight: 700;
+}
+
+.chart-grid {
+    margin-top: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.chart-grid .wide {
+    grid-column: 1 / -1;
+}
+
+canvas {
+    width: 100%;
+    height: 320px;
+}
+
+.formula-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+}
+
+.formula-grid article {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    background: #fafcff;
+}
+
+.formula-grid p {
+    margin: 8px 0;
+}
+
+.muted {
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+@media (max-width: 820px) {
+    .chart-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-grid .wide {
+        grid-column: auto;
+    }
+}
+
+@media print {
+    body {
+        background: #fff;
+    }
+
+    .controls,
+    .button {
+        display: none;
+    }
+
+    .panel,
+    .stat-card,
+    .hero {
+        box-shadow: none;
+    }
+}

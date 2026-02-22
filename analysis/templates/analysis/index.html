@@ -1,0 +1,384 @@
+{% load static analysis_extras %}
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дослідження Н4-6 | КП №5</title>
+    <link rel="stylesheet" href="{% static 'analysis/style.css' %}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <main class="page">
+        <header class="hero">
+            <h1>Модель короткочасової нестабільності Н4-6</h1>
+            <p>
+                Дослідження розширеної невизначеності <strong>U<sub>0.95</sub>(t)</strong>
+                для варіанта 5 (калібратор універсальний Н4-6).
+            </p>
+        </header>
+
+        <section class="panel">
+            <form id="controlsForm" class="controls" method="get">
+                <label>
+                    Рівень довіри p
+                    <input type="number" step="0.001" min="0.8" max="0.999" name="p" value="{{ controls.coverage }}">
+                </label>
+
+                <label>
+                    Тривалість спостереження, хв
+                    <input type="number" step="1" min="10" max="300" name="duration" value="{{ controls.duration }}">
+                </label>
+
+                <label>
+                    Вікна (через кому), хв
+                    <input type="text" name="windows" value="{{ controls.windows }}">
+                </label>
+
+                <label>
+                    Гістограма для вікна, хв
+                    <select name="hist_window" onchange="this.form.submit()">
+                        {% for window in analysis.windows %}
+                        <option value="{{ window }}" {% if selected_hist_window == window|stringformat:'s' %}selected{% endif %}>{{ window }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <button type="submit">Перерахувати</button>
+                <a class="button secondary" href="/">Скинути</a>
+                <a class="button secondary" href="{% url 'export_csv' %}{% if query_string %}?{{ query_string }}{% endif %}">Експорт CSV</a>
+                <button type="button" class="secondary" onclick="window.print()">Друк</button>
+            </form>
+        </section>
+
+        <section class="grid stats-grid">
+            <article class="stat-card">
+                <h3>Кількість відліків</h3>
+                <p>{{ analysis.raw_stats.count|floatformat:0 }}</p>
+            </article>
+            <article class="stat-card">
+                <h3>Середній період, хв</h3>
+                <p>{{ analysis.sample_period_min|floatformat:4 }}</p>
+            </article>
+            <article class="stat-card">
+                <h3>Середнє значення сигналу</h3>
+                <p>{{ analysis.raw_stats.mean|floatformat:9 }}</p>
+            </article>
+            <article class="stat-card">
+                <h3>Стандартне відхилення</h3>
+                <p>{{ analysis.raw_stats.std|floatformat:9 }}</p>
+            </article>
+            <article class="stat-card">
+                <h3>Асиметрія (skewness)</h3>
+                <p>{{ analysis.raw_stats.skewness|floatformat:4 }}</p>
+            </article>
+            <article class="stat-card winner">
+                <h3>Переможець змагання</h3>
+                <p>{{ model_labels|get_item:winner_model }}</p>
+                <small>score = {{ winner_score|floatformat:4 }}</small>
+            </article>
+        </section>
+
+        <section class="panel">
+            <h2>Залежність U0.95(t) за вікнами</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Вікно, хв</th>
+                            <th>Сегментів</th>
+                            <th>Точок/сегмент</th>
+                            <th>A: нижня/верхня, ppm</th>
+                            <th>B: нижня/верхня, ppm</th>
+                            <th>C: нижня/верхня, ppm</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in window_rows %}
+                        <tr>
+                            <td>{{ row.window }}</td>
+                            <td>{{ row.segments_count }}</td>
+                            <td>{{ row.points_per_segment }}</td>
+                            <td>{{ row.models.quantile.lower|floatformat:3 }} / {{ row.models.quantile.upper|floatformat:3 }}</td>
+                            <td>{{ row.models.normal.lower|floatformat:3 }} / {{ row.models.normal.upper|floatformat:3 }}</td>
+                            <td>{{ row.models.robust.lower|floatformat:3 }} / {{ row.models.robust.upper|floatformat:3 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Змагання гілок і жорстка критика</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Місце</th>
+                            <th>Гілка</th>
+                            <th>Похибка покриття</th>
+                            <th>Середня ширина</th>
+                            <th>Стабільність</th>
+                            <th>Score</th>
+                            <th>Сильна сторона</th>
+                            <th>Критика</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in competition %}
+                        <tr>
+                            <td>{{ row.rank }}</td>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.coverage_error|floatformat:4 }}</td>
+                            <td>{{ row.mean_width|floatformat:4 }}</td>
+                            <td>{{ row.stability|floatformat:4 }}</td>
+                            <td><strong>{{ row.score|floatformat:4 }}</strong></td>
+                            <td>{{ row.idea }}</td>
+                            <td>{{ row.critique }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="grid chart-grid">
+            <article class="panel">
+                <h2>Вихідний сигнал x(t)</h2>
+                <canvas id="signalChart"></canvas>
+            </article>
+
+            <article class="panel">
+                <h2>Відносне відхилення δ(t), ppm</h2>
+                <canvas id="ppmChart"></canvas>
+            </article>
+
+            <article class="panel wide">
+                <h2>Порівняння U0.95(t) по гілках</h2>
+                <canvas id="boundsChart"></canvas>
+            </article>
+
+            <article class="panel">
+                <h2>Гістограма для обраного вікна</h2>
+                <canvas id="histChart"></canvas>
+            </article>
+
+            <article class="panel">
+                <h2>Score моделей</h2>
+                <canvas id="scoreChart"></canvas>
+            </article>
+        </section>
+
+        <section class="panel">
+            <h2>Поліноми 3-го порядку для захисту</h2>
+            <p>t у хвилинах, U у ppm. Формули побудовані окремо для нижньої та верхньої меж.</p>
+            <div class="formula-grid">
+                {% for model in model_order %}
+                <article>
+                    <h3>{{ model_labels|get_item:model }}</h3>
+                    <p><strong>U<sub>low</sub>(t):</strong> {{ analysis.polynomials|get_item:model|get_item:'formula_lower' }}</p>
+                    <p><strong>U<sub>up</sub>(t):</strong> {{ analysis.polynomials|get_item:model|get_item:'formula_upper' }}</p>
+                    <p class="muted">
+                        R² low = {{ analysis.polynomials|get_item:model|get_item:'lower'|get_item:'r2'|floatformat:4 }},
+                        R² up = {{ analysis.polynomials|get_item:model|get_item:'upper'|get_item:'r2'|floatformat:4 }}
+                    </p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const timeSeries = JSON.parse("{{ time_series_json|escapejs }}");
+        const modelSeries = JSON.parse("{{ model_series_json|escapejs }}");
+        const competition = JSON.parse("{{ competition_json|escapejs }}");
+        const histograms = JSON.parse("{{ histograms_json|escapejs }}");
+        const polynomials = JSON.parse("{{ polynomials_json|escapejs }}");
+        const modelLabels = JSON.parse("{{ model_labels_json|escapejs }}");
+        const modelColors = JSON.parse("{{ model_colors_json|escapejs }}");
+        const modelOrder = ["quantile", "normal", "robust"];
+        const winnerModel = "{{ winner_model }}";
+        const selectedHistWindow = "{{ selected_hist_window }}";
+
+        function lineDataset(label, data, color, dashed = false) {
+            return {
+                label,
+                data,
+                borderColor: color,
+                backgroundColor: color,
+                borderDash: dashed ? [6, 4] : [],
+                borderWidth: 2,
+                pointRadius: 2,
+                tension: 0.15,
+                fill: false,
+            };
+        }
+
+        new Chart(document.getElementById("signalChart"), {
+            type: "line",
+            data: {
+                labels: timeSeries.time,
+                datasets: [lineDataset("x(t)", timeSeries.signal, "#1254ff")],
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: { title: { display: true, text: "Час, хв" } },
+                    y: { title: { display: true, text: "Напруга, В" } },
+                },
+            },
+        });
+
+        new Chart(document.getElementById("ppmChart"), {
+            type: "line",
+            data: {
+                labels: timeSeries.time,
+                datasets: [lineDataset("δ(t), ppm", timeSeries.ppm, "#f85f2a")],
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: { title: { display: true, text: "Час, хв" } },
+                    y: { title: { display: true, text: "ppm" } },
+                },
+            },
+        });
+
+        const boundsDatasets = [];
+        modelOrder.forEach((model) => {
+            const series = modelSeries[model];
+            const color = modelColors[model];
+
+            boundsDatasets.push({
+                label: `${modelLabels[model]}: нижня`,
+                data: series.times.map((x, idx) => ({ x, y: series.lower[idx] })),
+                borderColor: color,
+                backgroundColor: color,
+                borderDash: [6, 4],
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.1,
+                parsing: false,
+            });
+
+            boundsDatasets.push({
+                label: `${modelLabels[model]}: верхня`,
+                data: series.times.map((x, idx) => ({ x, y: series.upper[idx] })),
+                borderColor: color,
+                backgroundColor: color,
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.1,
+                parsing: false,
+            });
+        });
+
+        if (polynomials[winnerModel]) {
+            const color = modelColors[winnerModel];
+            boundsDatasets.push({
+                label: `${modelLabels[winnerModel]}: поліном нижній`,
+                data: polynomials[winnerModel].lower.grid_x.map((x, idx) => ({ x, y: polynomials[winnerModel].lower.grid_y[idx] })),
+                borderColor: color,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                borderDash: [2, 2],
+                parsing: false,
+            });
+            boundsDatasets.push({
+                label: `${modelLabels[winnerModel]}: поліном верхній`,
+                data: polynomials[winnerModel].upper.grid_x.map((x, idx) => ({ x, y: polynomials[winnerModel].upper.grid_y[idx] })),
+                borderColor: color,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                borderDash: [2, 2],
+                parsing: false,
+            });
+        }
+
+        new Chart(document.getElementById("boundsChart"), {
+            type: "line",
+            data: { datasets: boundsDatasets },
+            options: {
+                responsive: true,
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: {
+                        type: "linear",
+                        title: { display: true, text: "Час спостереження, хв" },
+                    },
+                    y: {
+                        title: { display: true, text: "Розширена невизначеність, ppm" },
+                    },
+                },
+            },
+        });
+
+        function buildHistogramData(windowKey) {
+            const hist = histograms[windowKey];
+            if (!hist) {
+                return { labels: [], values: [] };
+            }
+
+            const labels = [];
+            const values = [];
+
+            for (let i = 0; i < hist.counts.length; i += 1) {
+                const left = hist.edges[i];
+                const right = hist.edges[i + 1];
+                labels.push(`${left.toFixed(2)}..${right.toFixed(2)}`);
+                values.push(hist.counts[i]);
+            }
+
+            return { labels, values };
+        }
+
+        const histInitial = buildHistogramData(selectedHistWindow);
+        new Chart(document.getElementById("histChart"), {
+            type: "bar",
+            data: {
+                labels: histInitial.labels,
+                datasets: [
+                    {
+                        label: `Кількість попадань (вікно ${selectedHistWindow} хв)`,
+                        data: histInitial.values,
+                        backgroundColor: "rgba(18, 84, 255, 0.55)",
+                        borderColor: "#1254ff",
+                        borderWidth: 1,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: { title: { display: true, text: "Інтервали, ppm" } },
+                    y: { title: { display: true, text: "Кількість" } },
+                },
+            },
+        });
+
+        new Chart(document.getElementById("scoreChart"), {
+            type: "bar",
+            data: {
+                labels: competition.map((item) => item.label),
+                datasets: [
+                    {
+                        label: "Підсумковий score (менше = краще)",
+                        data: competition.map((item) => item.score),
+                        backgroundColor: competition.map((item) => modelColors[item.model]),
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: { ticks: { autoSkip: false } },
+                    y: { title: { display: true, text: "Score" } },
+                },
+            },
+        });
+    </script>
+</body>
+</html>
