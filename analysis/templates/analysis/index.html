@@ -1,23 +1,41 @@
 {% load static analysis_extras %}
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Дослідження Н4-6 | КП №5</title>
+    <title>Дослідження Н4-6 | КП №1</title>
     <link rel="stylesheet" href="{% static 'analysis/style.css' %}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
     <main class="page">
-        <header class="hero">
-            <h1>Модель короткочасової нестабільності Н4-6</h1>
-            <p>
-                Дослідження розширеної невизначеності <strong>U<sub>0.95</sub>(t)</strong>
-                для варіанта 5 (калібратор універсальний Н4-6).
-            </p>
-        </header>
 
+        {# ── File upload form ─────────────────────────────────────────── #}
+        <section class="panel">
+            <h2>Завантажити альтернативний набір даних</h2>
+            <form id="uploadForm" method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                {# carry current GET params as hidden fields so controls survive upload #}
+                <input type="hidden" name="p"          value="{{ controls.coverage }}">
+                <input type="hidden" name="duration"   value="{{ controls.duration }}">
+                <input type="hidden" name="windows"    value="{{ controls.windows }}">
+                <div class="controls" style="align-items:center">
+                    <label>
+                        Файл сигналу (.txt)
+                        <input type="file" name="signal_file" accept=".txt,.csv">
+                    </label>
+                    <button type="submit">Завантажити</button>
+                </div>
+            </form>
+            {% if upload_error %}
+            <p class="warning-text">{{ upload_error }}</p>
+            {% endif %}
+        </section>
+
+        {# ── Parameter controls ───────────────────────────────────────── #}
         <section class="panel">
             <form id="controlsForm" class="controls" method="get">
                 <label>
@@ -39,69 +57,238 @@
                     Гістограма для вікна, хв
                     <select name="hist_window" onchange="this.form.submit()">
                         {% for window in analysis.windows %}
-                        <option value="{{ window }}" {% if selected_hist_window == window|stringformat:'s' %}selected{% endif %}>{{ window }}</option>
+                        <option value="{{ window }}" {% if selected_hist_window|is_equal:window %}selected{% endif %}>
+                            {{ window }}
+                        </option>
                         {% endfor %}
                     </select>
                 </label>
 
                 <button type="submit">Перерахувати</button>
                 <a class="button secondary" href="/">Скинути</a>
-                <a class="button secondary" href="{% url 'export_csv' %}{% if query_string %}?{{ query_string }}{% endif %}">Експорт CSV</a>
-                <button type="button" class="secondary" onclick="window.print()">Друк</button>
             </form>
         </section>
 
-        <section class="grid stats-grid">
-            <article class="stat-card">
-                <h3>Кількість відліків</h3>
-                <p>{{ analysis.raw_stats.count|floatformat:0 }}</p>
-            </article>
-            <article class="stat-card">
-                <h3>Середній період, хв</h3>
-                <p>{{ analysis.sample_period_min|floatformat:4 }}</p>
-            </article>
-            <article class="stat-card">
-                <h3>Середнє значення сигналу</h3>
-                <p>{{ analysis.raw_stats.mean|floatformat:9 }}</p>
-            </article>
-            <article class="stat-card">
-                <h3>Стандартне відхилення</h3>
-                <p>{{ analysis.raw_stats.std|floatformat:9 }}</p>
-            </article>
-            <article class="stat-card">
-                <h3>Асиметрія (skewness)</h3>
-                <p>{{ analysis.raw_stats.skewness|floatformat:4 }}</p>
-            </article>
-            <article class="stat-card winner">
-                <h3>Переможець змагання</h3>
-                <p>{{ model_labels|get_item:winner_model }}</p>
-                <small>score = {{ winner_score|floatformat:4 }}</small>
-            </article>
+        {# ── Quick stats header ───────────────────────────────────────── #}
+        <section class="panel">
+            <div class="stats-block">
+                <div class="stat-info-item">
+                    <h3>Кількість відліків</h3>
+                    <p>{{ analysis.raw_stats.count|floatformat:0 }}</p>
+                </div>
+                <div class="stat-info-item">
+                    <h3>Період дискретизації, хв</h3>
+                    <p>{{ analysis.sample_period_min|floatformat:4 }}</p>
+                </div>
+                <div class="stat-info-item">
+                    <h3>Середнє сигналу</h3>
+                    <p>{{ analysis.raw_stats.mean|floatformat:9 }}</p>
+                </div>
+                <div class="stat-info-item">
+                    <h3>Std сигналу</h3>
+                    <p>{{ analysis.raw_stats.std|floatformat:9 }}</p>
+                </div>
+                <div class="stat-info-item highlight">
+                    <h3>U0.95(60 хв), нижня</h3>
+                    <p>{{ analysis.table4_rows|last|get_item:'lower'|floatformat:3 }}</p>
+                </div>
+                <div class="stat-info-item highlight">
+                    <h3>U0.95(60 хв), верхня</h3>
+                    <p>{{ analysis.table4_rows|last|get_item:'upper'|floatformat:3 }}</p>
+                </div>
+            </div>
+        </section>
+
+        {# ── Table 1: General stats ───────────────────────────────────── #}
+        <section class="panel">
+            <h2>Таблиця 1. Загальні статистичні характеристики (для всього сигналу)</h2>
+            <p class="muted">
+                Розраховуються за повним масивом даних (120 відліків). Математичне очікування, дисперсія та
+                середньоквадратичне відхилення (СКВ)
+                дають інтегральну оцінку стабільності сигналу за весь період спостереження.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Показник</th>
+                            <th>Для вихідного сигналу</th>
+                            <th>Для відносного відхилення (ppm)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in analysis.table1_rows %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.raw|floatformat:9 }}</td>
+                            <td>{{ row.ppm|floatformat:9 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {# ── Table 2: Crossings at level 0.1 ─────────────────────────── #}
+        <section class="panel">
+            <h2>Таблиця 2. Перетини гістограми на рівні 0.1</h2>
+            <p class="muted">
+                Перший і останній центр стовпчика нормованої гістограми (HN), де HN&nbsp;≥&nbsp;0.1.
+                Для двох 30-хвилинних інтервалів наведено окремі значення та їхнє середнє арифметичне.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Інтервал</th>
+                            <th>X₁ (перший перетин)</th>
+                            <th>X₂ (останній перетин)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {# 60-min segment #}
+                        {% with c60=analysis.interval_analysis.seg_60.crossings %}
+                        <tr>
+                            <td>60 хв (повна)</td>
+                            <td>{% if c60.first_x is not None %}{{ c60.first_x|floatformat:1 }}{% else %}—{% endif %}</td>
+                            <td>{% if c60.last_x  is not None %}{{ c60.last_x|floatformat:1  }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endwith %}
+                        {# 30-min segment A #}
+                        {% with c30a=analysis.interval_analysis.seg_30_a.crossings %}
+                        <tr>
+                            <td>30 хв (перша половина)</td>
+                            <td>{% if c30a.first_x is not None %}{{ c30a.first_x|floatformat:1 }}{% else %}—{% endif %}</td>
+                            <td>{% if c30a.last_x  is not None %}{{ c30a.last_x|floatformat:1  }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endwith %}
+                        {# 30-min segment B #}
+                        {% with c30b=analysis.interval_analysis.seg_30_b.crossings %}
+                        <tr>
+                            <td>30 хв (друга половина)</td>
+                            <td>{% if c30b.first_x is not None %}{{ c30b.first_x|floatformat:1 }}{% else %}—{% endif %}</td>
+                            <td>{% if c30b.last_x  is not None %}{{ c30b.last_x|floatformat:1  }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endwith %}
+                        {# Averaged 30-min crossings #}
+                        <tr class="highlight-row">
+                            <td><strong>Середнє 30 хв</strong></td>
+                            <td>
+                                {% if analysis.interval_analysis.avg_left is not None %}
+                                    <strong>{{ analysis.interval_analysis.avg_left|floatformat:1 }}</strong>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if analysis.interval_analysis.avg_right is not None %}
+                                    <strong>{{ analysis.interval_analysis.avg_right|floatformat:1 }}</strong>
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {# ── Table 2b: Per-interval statistics ───────────────────────── #}
+        <section class="panel">
+            <h2>Статистики відхилень за інтервалами</h2>
+            <p class="muted">
+                Статистичні характеристики вибірки відносних відхилень (ppm) окремо для 60-хвилинного
+                та двох 30-хвилинних сегментів.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Показник</th>
+                            <th>60 хв (повна)</th>
+                            <th>30 хв — перша половина</th>
+                            <th>30 хв — друга половина</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% with s60=analysis.interval_analysis.seg_60.stats s30a=analysis.interval_analysis.seg_30_a.stats s30b=analysis.interval_analysis.seg_30_b.stats %}
+                        <tr><td>Середнє (ppm)</td>      <td>{{ s60.mean|floatformat:9 }}</td>     <td>{{ s30a.mean|floatformat:9 }}</td>     <td>{{ s30b.mean|floatformat:9 }}</td></tr>
+                        <tr><td>Медіана (ppm)</td>      <td>{{ s60.median|floatformat:4 }}</td>   <td>{{ s30a.median|floatformat:4 }}</td>   <td>{{ s30b.median|floatformat:4 }}</td></tr>
+                        <tr><td>Мода (ppm)</td>         <td>{{ s60.mode|floatformat:4 }}</td>     <td>{{ s30a.mode|floatformat:4 }}</td>     <td>{{ s30b.mode|floatformat:4 }}</td></tr>
+                        <tr><td>Мінімум (ppm)</td>      <td>{{ s60.min|floatformat:4 }}</td>      <td>{{ s30a.min|floatformat:4 }}</td>      <td>{{ s30b.min|floatformat:4 }}</td></tr>
+                        <tr><td>Максимум (ppm)</td>     <td>{{ s60.max|floatformat:4 }}</td>      <td>{{ s30a.max|floatformat:4 }}</td>      <td>{{ s30b.max|floatformat:4 }}</td></tr>
+                        <tr><td>СКВ (ppm)</td>          <td>{{ s60.std|floatformat:4 }}</td>      <td>{{ s30a.std|floatformat:4 }}</td>      <td>{{ s30b.std|floatformat:4 }}</td></tr>
+                        <tr><td>Дисперсія</td>          <td>{{ s60.variance|floatformat:4 }}</td> <td>{{ s30a.variance|floatformat:4 }}</td> <td>{{ s30b.variance|floatformat:4 }}</td></tr>
+                        <tr><td>Кількість відліків</td> <td>{{ s60.count|floatformat:0 }}</td>    <td>{{ s30a.count|floatformat:0 }}</td>    <td>{{ s30b.count|floatformat:0 }}</td></tr>
+                        {% endwith %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {# ── Table 3: Window U0.95 ────────────────────────────────────── #}
+        <section class="panel">
+            <h2>Таблиця 3. Поточні інтервали U0.95 (віконний аналіз)</h2>
+            <p class="muted">
+                Показує межі довірчого інтервалу для кожного вікна аналізу на кожній хвилині.
+                Це дозволяє відстежити динаміку зміни невизначеності сигналу в часі для обраних інтервалів осереднення.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="2">Хвилина</th>
+                            {% for window in window_columns_desc %}
+                            <th colspan="2">{{ window }} хв</th>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            {% for window in window_columns_desc %}
+                            <th>-0.95</th>
+                            <th>+0.95</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in analysis.table3_rows %}
+                        <tr>
+                            <td>{{ row.minute }}</td>
+                            {% for window in window_columns_desc %}
+                            {% with value=row.values|get_item:window %}
+                            {% if value %}
+                            <td>{{ value.lower|floatformat:3 }}</td>
+                            <td>{{ value.upper|floatformat:3 }}</td>
+                            {% else %}
+                            <td></td>
+                            <td></td>
+                            {% endif %}
+                            {% endwith %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <section class="panel">
-            <h2>Залежність U0.95(t) за вікнами</h2>
+            <h2>Таблиця 4. Осереднена U0.95(t)</h2>
+            <p class="muted">
+                Містить усереднені значення меж довірчого інтервалу для кожного вікна аналізу.
+                Ці значення використовуються як опорні точки для побудови апроксимуючого полінома, що описує закон зміни
+                нестабільності.
+            </p>
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
                             <th>Вікно, хв</th>
-                            <th>Сегментів</th>
-                            <th>Точок/сегмент</th>
-                            <th>A: нижня/верхня, ppm</th>
-                            <th>B: нижня/верхня, ppm</th>
-                            <th>C: нижня/верхня, ppm</th>
+                            <th>-0.95, ppm</th>
+                            <th>+0.95, ppm</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for row in window_rows %}
+                        {% for row in analysis.table4_rows %}
                         <tr>
-                            <td>{{ row.window }}</td>
-                            <td>{{ row.segments_count }}</td>
-                            <td>{{ row.points_per_segment }}</td>
-                            <td>{{ row.models.quantile.lower|floatformat:3 }} / {{ row.models.quantile.upper|floatformat:3 }}</td>
-                            <td>{{ row.models.normal.lower|floatformat:3 }} / {{ row.models.normal.upper|floatformat:3 }}</td>
-                            <td>{{ row.models.robust.lower|floatformat:3 }} / {{ row.models.robust.upper|floatformat:3 }}</td>
+                            <td>{{ row.window|floatformat:0 }}</td>
+                            <td>{{ row.lower|floatformat:3 }}</td>
+                            <td>{{ row.upper|floatformat:3 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -109,276 +296,418 @@
             </div>
         </section>
 
-        <section class="panel">
-            <h2>Змагання гілок і жорстка критика</h2>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Місце</th>
-                            <th>Гілка</th>
-                            <th>Похибка покриття</th>
-                            <th>Середня ширина</th>
-                            <th>Стабільність</th>
-                            <th>Score</th>
-                            <th>Сильна сторона</th>
-                            <th>Критика</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in competition %}
-                        <tr>
-                            <td>{{ row.rank }}</td>
-                            <td>{{ row.label }}</td>
-                            <td>{{ row.coverage_error|floatformat:4 }}</td>
-                            <td>{{ row.mean_width|floatformat:4 }}</td>
-                            <td>{{ row.stability|floatformat:4 }}</td>
-                            <td><strong>{{ row.score|floatformat:4 }}</strong></td>
-                            <td>{{ row.idea }}</td>
-                            <td>{{ row.critique }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
+        {# ── Charts ───────────────────────────────────────────────────── #}
         <section class="grid chart-grid">
             <article class="panel">
                 <h2>Вихідний сигнал x(t)</h2>
+                <p class="muted">Графік первинних значень сигналу. Дозволяє візуально оцінити загальну поведінку,
+                    наявність дрейфу, шумів та грубих помилок (викидів).</p>
                 <canvas id="signalChart"></canvas>
             </article>
 
             <article class="panel">
                 <h2>Відносне відхилення δ(t), ppm</h2>
+                <p class="muted">Сигнал, центрований відносно середнього значення та виражений у ppm. Відображає чисту
+                    нестабільність незалежно від номіналу сигналу.</p>
                 <canvas id="ppmChart"></canvas>
             </article>
 
+            {# ── Interval histograms (60-min + two 30-min) ─────────── #}
             <article class="panel wide">
-                <h2>Порівняння U0.95(t) по гілках</h2>
-                <canvas id="boundsChart"></canvas>
+                <h2>Гістограма відхилень — 60 хв (HN_60)</h2>
+                <p class="muted">
+                    Нормована гістограма повної 60-хвилинної вибірки. Біни — цілі ppm від floor(min) до ceil(max), крок = 1.
+                    Пунктирна лінія — рівень 0.1.
+                </p>
+                <canvas id="hist60Chart"></canvas>
             </article>
 
             <article class="panel">
-                <h2>Гістограма для обраного вікна</h2>
-                <canvas id="histChart"></canvas>
+                <h2>Гістограма відхилень — 30 хв, перша половина (HN_30a)</h2>
+                <p class="muted">Пунктирна лінія — рівень 0.1. Перетини занесені у Таблицю 2.</p>
+                <canvas id="hist30aChart"></canvas>
             </article>
 
             <article class="panel">
-                <h2>Score моделей</h2>
-                <canvas id="scoreChart"></canvas>
+                <h2>Гістограма відхилень — 30 хв, друга половина (HN_30b)</h2>
+                <p class="muted">Пунктирна лінія — рівень 0.1. Перетини занесені у Таблицю 2.</p>
+                <canvas id="hist30bChart"></canvas>
+            </article>
+
+            <article class="panel wide">
+                <h2>Загальна гістограма відхилень (HN_global)</h2>
+                <p class="muted">
+                    Візуалізує статистичний розподіл усього сигналу. Форма розподілу свідчить про характер процесів у
+                    джерелі сигналу та наявність детермінованих завад чи дрейфу.
+                </p>
+                <canvas id="histGlobalChart"></canvas>
+            </article>
+
+            <article class="panel wide">
+                <h2>U0.95(t) та поліном 3-го порядку</h2>
+                <p class="muted">
+                    Ключовий графік аналізу. Точки показують осереднені значення довірчих меж для різних вікон.
+                    Лінія — апроксимація цих значень поліномом, що використовується для математичного моделювання
+                    нестабільності.
+                </p>
+                <canvas id="uChart"></canvas>
+            </article>
+
+            <article class="panel wide">
+                <h2>Гістограма вікна (абсолютна)</h2>
+                <p class="muted">Розподіл значень у межах першого сегменту обраного вікна. Показує частоту появи значень
+                    у конкретних діапазонах відхилень.</p>
+                <canvas id="histAbsChart"></canvas>
+            </article>
+
+            <article class="panel wide">
+                <h2>Гістограма вікна (нормована HN)</h2>
+                <p class="muted">Нормована за частотою гістограма вікна. На її основі розраховуються квантилі для
+                    визначення довірчих меж U0.95. Пунктирна лінія — рівень 0.1.</p>
+                <p id="densityWarning" class="warning-text" style="display:none;">
+                    УВАГА: Обране вікно містить занадто мало точок для статистично достовірної гістограми.
+                </p>
+                <canvas id="histNormChart"></canvas>
             </article>
         </section>
 
         <section class="panel">
-            <h2>Поліноми 3-го порядку для захисту</h2>
-            <p>t у хвилинах, U у ppm. Формули побудовані окремо для нижньої та верхньої меж.</p>
-            <div class="formula-grid">
-                {% for model in model_order %}
-                <article>
-                    <h3>{{ model_labels|get_item:model }}</h3>
-                    <p><strong>U<sub>low</sub>(t):</strong> {{ analysis.polynomials|get_item:model|get_item:'formula_lower' }}</p>
-                    <p><strong>U<sub>up</sub>(t):</strong> {{ analysis.polynomials|get_item:model|get_item:'formula_upper' }}</p>
-                    <p class="muted">
-                        R² low = {{ analysis.polynomials|get_item:model|get_item:'lower'|get_item:'r2'|floatformat:4 }},
-                        R² up = {{ analysis.polynomials|get_item:model|get_item:'upper'|get_item:'r2'|floatformat:4 }}
-                    </p>
-                </article>
-                {% endfor %}
-            </div>
+            <h2>Поліноміальні формули</h2>
+            <p class="muted">
+                Результат аналітичної апроксимації значень U0.95(t). Отримані рівняння дозволяють прогнозувати межі
+                можливих відхилень сигналу для будь-якого інтервалу часу в межах дослідженого діапазону.
+            </p>
+            <p><strong>U<sub>low</sub>(t):</strong> {{ analysis.polynomial.formula_lower }}</p>
+            <p><strong>U<sub>up</sub>(t):</strong> {{ analysis.polynomial.formula_upper }}</p>
+            <p class="muted">
+                R² low = {{ analysis.polynomial.lower.r2|floatformat:4 }},
+                R² up = {{ analysis.polynomial.upper.r2|floatformat:4 }}
+            </p>
         </section>
     </main>
 
     <script>
-        const timeSeries = JSON.parse("{{ time_series_json|escapejs }}");
-        const modelSeries = JSON.parse("{{ model_series_json|escapejs }}");
-        const competition = JSON.parse("{{ competition_json|escapejs }}");
-        const histograms = JSON.parse("{{ histograms_json|escapejs }}");
-        const polynomials = JSON.parse("{{ polynomials_json|escapejs }}");
-        const modelLabels = JSON.parse("{{ model_labels_json|escapejs }}");
-        const modelColors = JSON.parse("{{ model_colors_json|escapejs }}");
-        const modelOrder = ["quantile", "normal", "robust"];
-        const winnerModel = "{{ winner_model }}";
+        const timeSeries       = JSON.parse("{{ time_series_json|escapejs }}");
+        const histograms       = JSON.parse("{{ histograms_json|escapejs }}");
+        const globalHistogram  = JSON.parse("{{ global_histogram_json|escapejs }}");
+        const table4Rows       = JSON.parse("{{ table4_json|escapejs }}");
+        const polynomial       = JSON.parse("{{ polynomial_json|escapejs }}");
+        const intervalAnalysis = JSON.parse("{{ interval_analysis_json|escapejs }}");
         const selectedHistWindow = "{{ selected_hist_window }}";
 
-        function lineDataset(label, data, color, dashed = false) {
+        // ── Helpers ──────────────────────────────────────────────────────
+        /** Build integer-edge labels for histogram: just the left-edge integer. */
+        function histLabels(hist) {
+            if (!hist || !hist.edges) return [];
+            const labels = [];
+            for (let i = 0; i < hist.counts.length; i++) {
+                labels.push(String(Math.round(hist.edges[i])));
+            }
+            return labels;
+        }
+
+        /** Horizontal reference line dataset at y=level. */
+        function refLineDataset(level, color, n) {
+            const pts = [];
+            for (let i = 0; i < n; i++) pts.push(level);
             return {
-                label,
-                data,
+                label: `Рівень ${level}`,
+                data: pts,
                 borderColor: color,
-                backgroundColor: color,
-                borderDash: dashed ? [6, 4] : [],
-                borderWidth: 2,
-                pointRadius: 2,
-                tension: 0.15,
-                fill: false,
+                backgroundColor: "transparent",
+                borderWidth: 1.5,
+                borderDash: [6, 4],
+                pointRadius: 0,
+                type: "line",
+                order: 0,
             };
         }
 
+        /** Normalized histogram bar chart with a 0.1 threshold line. */
+        function buildNormHistChart(canvasId, hist, title) {
+            if (!hist || !hist.counts || hist.counts.length === 0) return;
+            const labels = histLabels(hist);
+            new Chart(document.getElementById(canvasId), {
+                type: "bar",
+                data: {
+                    labels,
+                    datasets: [
+                        refLineDataset(0.1, "#e74c3c", labels.length),
+                        {
+                            label: title,
+                            data: hist.normalized,
+                            backgroundColor: "rgba(0, 167, 121, 0.55)",
+                            borderColor: "#00a779",
+                            borderWidth: 1,
+                            order: 1,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { title: { display: true, text: "Відхилення, ppm" } },
+                        y: { title: { display: true, text: "HN" }, min: 0, max: 1 },
+                    },
+                },
+            });
+        }
+
+        // ── Signal chart ─────────────────────────────────────────────────
         new Chart(document.getElementById("signalChart"), {
             type: "line",
             data: {
-                labels: timeSeries.time,
-                datasets: [lineDataset("x(t)", timeSeries.signal, "#1254ff")],
+                datasets: [{
+                    label: "x(t)",
+                    data: timeSeries.time.map((t, i) => ({ x: t, y: timeSeries.signal[i] })),
+                    borderColor: "#1254ff",
+                    backgroundColor: "#1254ff",
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    tension: 0.15,
+                    fill: false,
+                }],
             },
             options: {
                 responsive: true,
                 interaction: { mode: "nearest", intersect: false },
+                plugins: {
+                    subtitle: {
+                        display: true,
+                        text: `Загальна тривалість T = {{ controls.duration }} хв`,
+                        font: { size: 14 }
+                    }
+                },
                 scales: {
-                    x: { title: { display: true, text: "Час, хв" } },
+                    x: {
+                        type: "linear",
+                        title: { display: true, text: "Час, хв" },
+                        ticks: { callback: (val) => val.toFixed(1) }
+                    },
                     y: { title: { display: true, text: "Напруга, В" } },
                 },
             },
         });
 
+        // ── PPM deviation chart ───────────────────────────────────────────
         new Chart(document.getElementById("ppmChart"), {
             type: "line",
             data: {
-                labels: timeSeries.time,
-                datasets: [lineDataset("δ(t), ppm", timeSeries.ppm, "#f85f2a")],
+                datasets: [{
+                    label: "δ(t)",
+                    data: timeSeries.time.map((t, i) => ({ x: t, y: timeSeries.ppm[i] })),
+                    borderColor: "#f85f2a",
+                    backgroundColor: "#f85f2a",
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    tension: 0.15,
+                    fill: false,
+                }],
             },
             options: {
                 responsive: true,
                 interaction: { mode: "nearest", intersect: false },
-                scales: {
-                    x: { title: { display: true, text: "Час, хв" } },
-                    y: { title: { display: true, text: "ppm" } },
+                plugins: {
+                    subtitle: {
+                        display: true,
+                        text: `Загальна тривалість T = {{ controls.duration }} хв`,
+                        font: { size: 14 }
+                    }
                 },
-            },
-        });
-
-        const boundsDatasets = [];
-        modelOrder.forEach((model) => {
-            const series = modelSeries[model];
-            const color = modelColors[model];
-
-            boundsDatasets.push({
-                label: `${modelLabels[model]}: нижня`,
-                data: series.times.map((x, idx) => ({ x, y: series.lower[idx] })),
-                borderColor: color,
-                backgroundColor: color,
-                borderDash: [6, 4],
-                borderWidth: 2,
-                pointRadius: 3,
-                tension: 0.1,
-                parsing: false,
-            });
-
-            boundsDatasets.push({
-                label: `${modelLabels[model]}: верхня`,
-                data: series.times.map((x, idx) => ({ x, y: series.upper[idx] })),
-                borderColor: color,
-                backgroundColor: color,
-                borderWidth: 2,
-                pointRadius: 3,
-                tension: 0.1,
-                parsing: false,
-            });
-        });
-
-        if (polynomials[winnerModel]) {
-            const color = modelColors[winnerModel];
-            boundsDatasets.push({
-                label: `${modelLabels[winnerModel]}: поліном нижній`,
-                data: polynomials[winnerModel].lower.grid_x.map((x, idx) => ({ x, y: polynomials[winnerModel].lower.grid_y[idx] })),
-                borderColor: color,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                borderDash: [2, 2],
-                parsing: false,
-            });
-            boundsDatasets.push({
-                label: `${modelLabels[winnerModel]}: поліном верхній`,
-                data: polynomials[winnerModel].upper.grid_x.map((x, idx) => ({ x, y: polynomials[winnerModel].upper.grid_y[idx] })),
-                borderColor: color,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                borderDash: [2, 2],
-                parsing: false,
-            });
-        }
-
-        new Chart(document.getElementById("boundsChart"), {
-            type: "line",
-            data: { datasets: boundsDatasets },
-            options: {
-                responsive: true,
-                interaction: { mode: "nearest", intersect: false },
                 scales: {
                     x: {
                         type: "linear",
-                        title: { display: true, text: "Час спостереження, хв" },
+                        title: { display: true, text: "Час, хв" },
+                        ticks: { callback: (val) => val.toFixed(1) }
                     },
                     y: {
-                        title: { display: true, text: "Розширена невизначеність, ppm" },
+                        title: { display: true, text: "ppm" },
+                        ticks: { callback: (val) => val.toFixed(0) }
                     },
                 },
             },
         });
 
-        function buildHistogramData(windowKey) {
-            const hist = histograms[windowKey];
-            if (!hist) {
-                return { labels: [], values: [] };
-            }
+        // ── Interval histograms ───────────────────────────────────────────
+        buildNormHistChart("hist60Chart",  intervalAnalysis.seg_60.histogram,   "HN 60 хв");
+        buildNormHistChart("hist30aChart", intervalAnalysis.seg_30_a.histogram,  "HN 30 хв (A)");
+        buildNormHistChart("hist30bChart", intervalAnalysis.seg_30_b.histogram,  "HN 30 хв (B)");
 
-            const labels = [];
-            const values = [];
+        // ── U0.95 polynomial chart ────────────────────────────────────────
+        const uDatasets = [
+            {
+                label: "U_low табличний",
+                data: table4Rows.map((row) => ({ x: row.window, y: row.lower })),
+                borderColor: "#1254ff",
+                backgroundColor: "#1254ff",
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.1,
+                parsing: false,
+            },
+            {
+                label: "U_up табличний",
+                data: table4Rows.map((row) => ({ x: row.window, y: row.upper })),
+                borderColor: "#00a779",
+                backgroundColor: "#00a779",
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.1,
+                parsing: false,
+            },
+        ];
 
-            for (let i = 0; i < hist.counts.length; i += 1) {
-                const left = hist.edges[i];
-                const right = hist.edges[i + 1];
-                labels.push(`${left.toFixed(2)}..${right.toFixed(2)}`);
-                values.push(hist.counts[i]);
-            }
-
-            return { labels, values };
+        if (polynomial.lower && polynomial.lower.grid_x) {
+            uDatasets.push({
+                label: "U_low поліном",
+                data: polynomial.lower.grid_x.map((x, index) => ({ x, y: polynomial.lower.grid_y[index] })),
+                borderColor: "#1254ff",
+                borderDash: [3, 3],
+                borderWidth: 1.5,
+                pointRadius: 0,
+                parsing: false,
+            });
         }
 
-        const histInitial = buildHistogramData(selectedHistWindow);
-        new Chart(document.getElementById("histChart"), {
-            type: "bar",
-            data: {
-                labels: histInitial.labels,
-                datasets: [
-                    {
-                        label: `Кількість попадань (вікно ${selectedHistWindow} хв)`,
-                        data: histInitial.values,
-                        backgroundColor: "rgba(18, 84, 255, 0.55)",
-                        borderColor: "#1254ff",
-                        borderWidth: 1,
-                    },
-                ],
-            },
+        if (polynomial.upper && polynomial.upper.grid_x) {
+            uDatasets.push({
+                label: "U_up поліном",
+                data: polynomial.upper.grid_x.map((x, index) => ({ x, y: polynomial.upper.grid_y[index] })),
+                borderColor: "#00a779",
+                borderDash: [3, 3],
+                borderWidth: 1.5,
+                pointRadius: 0,
+                parsing: false,
+            });
+        }
+
+        new Chart(document.getElementById("uChart"), {
+            type: "line",
+            data: { datasets: uDatasets },
             options: {
                 responsive: true,
+                interaction: { mode: "nearest", intersect: false },
                 scales: {
-                    x: { title: { display: true, text: "Інтервали, ppm" } },
-                    y: { title: { display: true, text: "Кількість" } },
+                    x: { type: "linear", title: { display: true, text: "t, хв" } },
+                    y: { title: { display: true, text: "U0.95, ppm" } },
                 },
             },
         });
 
-        new Chart(document.getElementById("scoreChart"), {
+        // ── Window histogram (absolute & normalized) ──────────────────────
+        function buildWindowHistogram(windowKey) {
+            const hist = histograms[windowKey];
+            if (!hist || !hist.counts || !hist.edges || hist.counts.length === 0) {
+                return { labels: [], absolute: [], normalized: [] };
+            }
+            const labels = histLabels(hist);
+            return { labels, absolute: hist.counts, normalized: hist.normalized };
+        }
+
+        const histData = buildWindowHistogram(selectedHistWindow);
+
+        // Density warning
+        const warningEl = document.getElementById("densityWarning");
+        if (warningEl) {
+            warningEl.style.display = "none";
+            const currentHist = histograms[selectedHistWindow];
+            if (currentHist && currentHist.counts) {
+                const totalPoints = currentHist.counts.reduce((a, b) => a + b, 0);
+                if (totalPoints > 0 && totalPoints < 6) {
+                    warningEl.style.display = "block";
+                }
+            }
+        }
+
+        new Chart(document.getElementById("histAbsChart"), {
             type: "bar",
             data: {
-                labels: competition.map((item) => item.label),
-                datasets: [
-                    {
-                        label: "Підсумковий score (менше = краще)",
-                        data: competition.map((item) => item.score),
-                        backgroundColor: competition.map((item) => modelColors[item.model]),
-                    },
-                ],
+                labels: histData.labels,
+                datasets: [{
+                    label: `n_j (вікно ${selectedHistWindow} хв)`,
+                    data: histData.absolute,
+                    backgroundColor: "rgba(18, 84, 255, 0.55)",
+                    borderColor: "#1254ff",
+                    borderWidth: 1,
+                }],
             },
             options: {
                 responsive: true,
                 scales: {
-                    x: { ticks: { autoSkip: false } },
-                    y: { title: { display: true, text: "Score" } },
+                    x: { title: { display: true, text: "Відхилення, ppm" } },
+                    y: { title: { display: true, text: "Кількість попадань" }, beginAtZero: true },
                 },
             },
         });
+
+        // Normalized window histogram WITH 0.1 reference line
+        {
+            const winHist = histograms[selectedHistWindow];
+            if (winHist && winHist.counts && winHist.counts.length > 0) {
+                const labels = histLabels(winHist);
+                new Chart(document.getElementById("histNormChart"), {
+                    type: "bar",
+                    data: {
+                        labels,
+                        datasets: [
+                            refLineDataset(0.1, "#e74c3c", labels.length),
+                            {
+                                label: `HN (вікно ${selectedHistWindow} хв)`,
+                                data: winHist.normalized,
+                                backgroundColor: "rgba(0, 167, 121, 0.55)",
+                                borderColor: "#00a779",
+                                borderWidth: 1,
+                                order: 1,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { title: { display: true, text: "Відхилення, ppm" } },
+                            y: { title: { display: true, text: "HN" }, min: 0, max: 1 },
+                        },
+                    },
+                });
+            }
+        }
+
+        // ── Global histogram ──────────────────────────────────────────────
+        {
+            const labels = histLabels(globalHistogram);
+            new Chart(document.getElementById("histGlobalChart"), {
+                type: "bar",
+                data: {
+                    labels,
+                    datasets: [
+                        refLineDataset(0.1, "#e74c3c", labels.length),
+                        {
+                            label: "HN Загальна",
+                            data: globalHistogram.normalized,
+                            backgroundColor: "rgba(100, 100, 100, 0.55)",
+                            borderColor: "#666",
+                            borderWidth: 1,
+                            order: 1,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { title: { display: true, text: "Відхилення, ppm" } },
+                        y: { title: { display: true, text: "HN" }, min: 0, max: 1 },
+                    },
+                },
+            });
+        }
     </script>
+
+    <style>
+        /* Highlight row in crossing table */
+        tr.highlight-row td {
+            background: rgba(18, 84, 255, 0.06);
+        }
+    </style>
 </body>
+
 </html>

@@ -147,6 +147,41 @@ h3 {
     background: linear-gradient(160deg, #f4fffb 0%, #ecfff7 100%);
 }
 
+.stats-block {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+}
+
+.stat-info-item {
+    flex: 1;
+    min-width: 160px;
+    padding: 16px 20px;
+    border-right: 1px solid var(--border);
+}
+
+.stat-info-item:last-child {
+    border-right: none;
+}
+
+.stat-info-item h3 {
+    font-size: 0.9rem;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.stat-info-item p {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-family: "Space Grotesk", sans-serif;
+}
+
+.stat-info-item.highlight {
+    background: linear-gradient(160deg, #f4fffb 0%, #ecfff7 100%);
+}
+
 .table-wrap {
     overflow-x: auto;
 }
