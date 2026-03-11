@@ -1,3 +1,5 @@
+"""Адаптер між OOP-модулем signal_analysis та views.py"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,31 +42,37 @@ __all__ = [
 
 
 def parse_signal_text(raw_text: str) -> list[float]:
+    """Розбирає рядок тексту та повертає список float-значень"""
     return SignalParser.parse_text(raw_text)
 
 
 def load_default_signal() -> list[float]:
+    """Завантажує вбудований сигнал data/raw_signal.txt"""
     return SignalParser.load_default()
 
 
 def load_signal_from_upload(file_bytes: bytes) -> list[float]:
-    """Decode uploaded file bytes and parse the signal values."""
+    """Декодує байти завантаженого файлу та повертає розібрані значення сигналу"""
     return SignalParser.from_bytes(file_bytes)
 
 
 def quick_sort(values: list[float]) -> list[float]:
+    """Сортує список значень за зростанням алгоритмом швидкого сорту"""
     return SignalStats.sort(values)
 
 
 def clean_windows(windows: list[float] | None) -> list[float]:
+    """Фільтрує і сортує список вікон, повертає DEFAULT_WINDOWS якщо вхід порожній"""
     return CalibratorAnalysis.clean_windows(windows)
 
 
 def compute_basic_stats(values: list[float]) -> dict[str, float]:
+    """Повертає словник зі статистичними характеристиками для переданого набору значень"""
     return SignalStats(values).to_dict()
 
 
 def compute_relative_ppm(values: list[float]) -> list[float]:
+    """Обчислює відносне відхилення (ppm) для кожного відліку сигналу"""
     if not values:
         return []
     m = SignalStats(values).mean
@@ -74,21 +82,23 @@ def compute_relative_ppm(values: list[float]) -> list[float]:
 
 
 def split_segments(values: list[float], points_per_segment: int) -> list[list[float]]:
+    """Розбиває послідовність на рівні сегменти по points_per_segment елементів"""
     if points_per_segment <= 0:
         return []
     return WindowAnalyzer.split(values, points_per_segment)
 
 
 def build_histogram(
-    values: list[float], bins_count: int | None = None
+    values: list[float], _bins_count: int | None = None
 ) -> dict[str, Any]:
-    """Build a histogram with integer-step bins.  bins_count is ignored (kept for API compat)."""
+    """Будує гістограму з цілочисельними інтервалами (_bins_count ігнорується)"""
     return HistogramData(values).to_dict()
 
 
 def find_histogram_crossings(
     histogram: dict[str, Any], level: float = 0.1
 ) -> dict[str, Any]:
+    """Повертає перший і останній X, де нормована частота >= level"""
     h = HistogramData.__new__(HistogramData)
     h.normalized = histogram.get("normalized", [])
     h.edges = histogram.get("edges", [])
@@ -96,6 +106,7 @@ def find_histogram_crossings(
 
 
 def histogram_quantile(histogram: dict[str, Any], quantile: float) -> float:
+    """Повертає квантиль quantile (0–1) за даними гістограми"""
     h = HistogramData.__new__(HistogramData)
     h.counts = histogram.get("counts", [])
     h.edges = histogram.get("edges", [])
@@ -105,6 +116,7 @@ def histogram_quantile(histogram: dict[str, Any], quantile: float) -> float:
 def bounds_from_histogram(
     histogram: dict[str, Any], coverage: float
 ) -> tuple[float, float]:
+    """Повертає (lower, upper) межі довірчого інтервалу за рівнем coverage"""
     h = HistogramData.__new__(HistogramData)
     h.counts = histogram.get("counts", [])
     h.edges = histogram.get("edges", [])
@@ -114,6 +126,7 @@ def bounds_from_histogram(
 def build_interval_analysis(
     relative_ppm: list[float], level: float = 0.1
 ) -> dict[str, Any]:
+    """Аналізує розподіл перетину ppm для 60-хв сегмента та двох половин"""
     analysis = CalibratorAnalysis(relative_ppm)
     return analysis.build_interval_analysis(relative_ppm, level)
 
@@ -123,15 +136,17 @@ def build_table3_rows(
     window_map: dict[float, dict[str, Any]],
     total_duration_min: float,
 ) -> list[dict[str, Any]]:
+    """Будує рядки таблиці 3 з поточними межами U0.95 по хвилинах"""
     analysis = CalibratorAnalysis(
         [], total_duration_min=total_duration_min, windows=windows
     )
-    return analysis._build_table3(windows, window_map)
+    return analysis.build_table3(windows, window_map)
 
 
 def build_table4_rows(
     windows: list[float], window_map: dict[float, dict[str, Any]]
 ) -> list[dict[str, float]]:
+    """Будує рядки таблиці 4 з осередненими межами U0.95 по кожному вікну"""
     return [
         {
             "window": float(w),
@@ -146,22 +161,26 @@ def build_table4_rows(
 def fit_polynomial(
     times: list[float], values: list[float], max_degree: int = 3
 ) -> dict[str, Any]:
+    """Апроксимує залежність values(times) поліномом до max_degree-го ступеня"""
     return PolynomialFitter(times, values, max_degree).fit()
 
 
 def polynomial_to_text(coeffs_desc: list[float]) -> str:
+    """Перетворює коефіцієнти полінома у рядок виду «a*t^3 + b*t^2 + …»"""
     return PolynomialFitter.to_formula(coeffs_desc)
 
 
 def build_polynomial_from_table4(table4_rows: list[dict[str, float]]) -> dict[str, Any]:
+    """Будує поліноми нижньої та верхньої меж за даними таблиці 4"""
     if not table4_rows:
-        empty_fit = {
+        empty_fit: dict[str, Any] = {
             "degree": 0,
             "coeffs": [0.0],
             "grid_x": [],
             "grid_y": [],
             "r2": 0.0,
         }
+
         return {
             "lower": empty_fit,
             "upper": empty_fit,
@@ -182,6 +201,7 @@ def build_polynomial_from_table4(table4_rows: list[dict[str, float]]) -> dict[st
 def build_table1_rows(
     raw_stats: dict[str, float], ppm_stats: dict[str, float]
 ) -> list[dict[str, Any]]:
+    """Будує рядки таблиці 1 зі статистичними характеристиками сигналу і ppm"""
     config = [
         ("Середнє", "mean"),
         ("Стандартна помилка", "sem"),
@@ -209,7 +229,7 @@ def build_analysis(
     coverage: float = DEFAULT_CONFIDENCE,
     windows: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Делегує до CalibratorAnalysis.run() — точка входу для views.py."""
+    """Делегує до CalibratorAnalysis.run() — точка входу для views.py"""
     return CalibratorAnalysis(
         signal_values=signal_values,
         total_duration_min=total_duration_min,

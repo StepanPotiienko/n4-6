@@ -39,23 +39,21 @@ class SignalParser:
     _PATTERN: re.Pattern[str] = re.compile(r"[-+]?\d+[,.]\d+E[-+]?\d+", re.IGNORECASE)
     _ENCODINGS: tuple[str, ...] = ("utf-8", "utf-8-sig", "cp1251", "latin-1")
 
-    # ── класові методи – кожен є «фабричним конструктором» ──────────── #
-
     @classmethod
     def parse_text(cls, raw_text: str) -> list[float]:
-        """Розбирає рядок і повертає список float-значень."""
+        """Розбирає рядок і повертає список float-значень"""
         tokens = cls._PATTERN.findall(raw_text)
         return [float(t.replace(",", ".")) for t in tokens]
 
     @classmethod
     def from_file(cls, path: str | Path) -> list[float]:
-        """Читає файл (UTF-8) і повертає розібрані значення."""
+        """Читає файл (UTF-8) і повертає розібрані значення"""
         raw_text = Path(path).read_text(encoding="utf-8")
         return cls.parse_text(raw_text)
 
     @classmethod
     def from_bytes(cls, file_bytes: bytes) -> list[float]:
-        """Пробує кілька кодувань і повертає перший успішний розбір."""
+        """Пробує кілька кодувань і повертає перший успішний розбір"""
         for encoding in cls._ENCODINGS:
             try:
                 text = file_bytes.decode(encoding)
@@ -68,17 +66,14 @@ class SignalParser:
 
     @classmethod
     def load_default(cls) -> list[float]:
-        """Завантажує вбудований файл raw_signal.txt."""
+        """Завантажує вбудований файл raw_signal.txt"""
         default_path = Path(__file__).resolve().parents[1] / "data" / "raw_signal.txt"
         return cls.from_file(default_path)
 
 
 class SignalStats:
     """
-    Обчислює і зберігає статистичні характеристики набору значень.
-
-    Усі«важкі» обчислення виконуються ліниво і кешуються через
-    property-методи.
+    Обчислює і зберігає статистичні характеристики набору значень
     """
 
     def __init__(self, values: list[float]) -> None:
@@ -86,7 +81,8 @@ class SignalStats:
         self._sorted: list[float] | None = None
 
     @staticmethod
-    def _quick_sort(data: list[float]) -> list[float]:
+    def sort(data: list[float]) -> list[float]:
+        """Сортує список значень за зростанням"""
         if len(data) <= 1:
             return data.copy()
         pivot = data[len(data) // 2]
@@ -100,12 +96,12 @@ class SignalStats:
                 greater.append(v)
             else:
                 equal.append(v)
-        return SignalStats._quick_sort(less) + equal + SignalStats._quick_sort(greater)
+        return SignalStats.sort(less) + equal + SignalStats.sort(greater)
 
     @property
     def _sorted_values(self) -> list[float]:
         if self._sorted is None:
-            self._sorted = self._quick_sort(self._values)
+            self._sorted = SignalStats.sort(self._values)
         return self._sorted
 
     @property
@@ -294,7 +290,7 @@ class HistogramData:
         )
         self.bins_count = actual_bins
 
-    def quantile(self, q: float) -> float:
+    def quantile(self, q: float) -> float:  # pylint: disable=too-many-return-statements
         """Повертає квантиль q (0.0 ≤ q ≤ 1.0) або 0.0 для порожньої гістограми"""
         if not self.counts or not self.edges:
             return 0.0
@@ -466,7 +462,7 @@ class PolynomialFitter:
                 vector[row] -= f * vector[pivot]
         return vector
 
-    def fit(self) -> dict[str, Any]:
+    def fit(self) -> dict[str, Any]:  # pylint: disable=too-many-locals
         """Повертає словник з результатами апроксимації"""
         ts, vs = self._times, self._values
         if not ts:
@@ -491,13 +487,11 @@ class PolynomialFitter:
         coeffs_asc = self._solve(matrix, vector)
         fitted = [self._eval(coeffs_asc, t) for t in ts]
 
-        # R²
         mean_y = sum(vs) / len(vs)
         ss_tot = sum((y - mean_y) ** 2 for y in vs)
         ss_res = sum((y - yp) ** 2 for y, yp in zip(vs, fitted))
         r2 = 1.0 - ss_res / ss_tot if ss_tot != 0.0 else 1.0
 
-        # Grid for smooth curve
         x_min, x_max = min(ts), max(ts)
         if x_max == x_min:
             grid_x = [x_min]
@@ -518,7 +512,7 @@ class PolynomialFitter:
 
     @staticmethod
     def to_formula(coeffs_desc: list[float]) -> str:
-        """Перетворює коефіцієнти у рядк виду «a*t^3 + b*t^2 + …»."""
+        """Перетворює коефіцієнти у рядок виду «a*t^3 + b*t^2 + …»"""
         degree = len(coeffs_desc) - 1
         parts: list[str] = []
         for idx, coef in enumerate(coeffs_desc):
@@ -652,8 +646,8 @@ class CalibratorAnalysis:
             rows.append({"minute": minute, "values": row_values})
         return rows
 
-    def run(self) -> dict[str, Any]:
-        """Виконує повний аналіз і повертає словник результатів."""
+    def run(self) -> dict[str, Any]:  # pylint: disable=too-many-locals
+        """Виконує повний аналіз і повертає словник результатів"""
         values = self._signal
         windows = self._windows
 
@@ -776,7 +770,6 @@ class ResultExporter:
 
     def export_json(self, filename: str = "analysis_result.json") -> Path:
         """Зберігає повний результат у JSON"""
-        # Підготовка: видаляємо ключі з нескінченними/NaN значеннями
         serializable = self._make_serializable(self._result)
         out_path = self._dir / filename
         out_path.write_text(

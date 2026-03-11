@@ -1,7 +1,10 @@
+"""Обробники запитів Django для аналізу сигналу калібратора Н4-6"""
+
 from __future__ import annotations
 
 import csv
 import json
+import re as _re
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
@@ -18,6 +21,7 @@ from .services import (
 
 
 def parse_coverage(raw_value: str | None, default: float = DEFAULT_CONFIDENCE) -> float:
+    """Парсить рядок покриття (0.80–0.999) і повертає підставлене значення"""
     if raw_value is None:
         return default
 
@@ -30,6 +34,7 @@ def parse_coverage(raw_value: str | None, default: float = DEFAULT_CONFIDENCE) -
 
 
 def parse_duration(raw_value: str | None, default: float = 60.0) -> float:
+    """Парсить тривалість (10–300 хв) і повертає підставлене значення"""
     if raw_value is None:
         return default
 
@@ -42,6 +47,7 @@ def parse_duration(raw_value: str | None, default: float = 60.0) -> float:
 
 
 def parse_windows(raw_value: str | None) -> list[float]:
+    """Парсить рядок вікон через кому та повертає відсортований список хвилин"""
     if not raw_value:
         return DEFAULT_WINDOWS.copy()
 
@@ -60,11 +66,14 @@ def parse_windows(raw_value: str | None) -> list[float]:
 
 
 def _reverse_windows(windows: list[int]) -> list[int]:
+    """Повертає список вікон у зворотному порядку для стовпців таблиці"""
     return [windows[index] for index in range(len(windows) - 1, -1, -1)]
 
 
-def build_context(request: HttpRequest) -> dict[str, Any]:
-    # Load signal — prefer uploaded file (POST), fall back to default
+def build_context(
+    request: HttpRequest,
+) -> dict[str, Any]:  # pylint: disable=too-many-locals
+    """Зчитує параметри запиту, запускає аналіз і повертає словник контексту"""
     signal_values: list[float] = []
     upload_error: str = ""
 
@@ -74,9 +83,6 @@ def build_context(request: HttpRequest) -> dict[str, Any]:
     if uploaded_file:
         try:
             raw_bytes: bytes = uploaded_file.read()
-            # Try multiple encodings; parse inline to avoid stale-import issues
-            import re as _re
-
             for _enc in ("utf-8", "utf-8-sig", "cp1251", "latin-1"):
                 try:
                     _text = raw_bytes.decode(_enc)
@@ -87,12 +93,14 @@ def build_context(request: HttpRequest) -> dict[str, Any]:
                     if _parsed:
                         signal_values = _parsed
                         break
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     continue
             if not signal_values:
-                upload_error = "Файл не містить розпізнаних числових значень; використано дані за замовчуванням."
-        except Exception as exc:
-            upload_error = f"Помилка читання файлу ({type(exc).__name__}: {exc}); використано дані за замовчуванням."
+                upload_error = "Файл не містить розпізнаних числових значень;\
+                    використано дані за замовчуванням."
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            upload_error = f"Помилка читання файлу ({type(exc).__name__}: {exc});\
+                використано дані за замовчуванням."
 
     if not signal_values:
         signal_values = load_default_signal()
@@ -159,11 +167,13 @@ def build_context(request: HttpRequest) -> dict[str, Any]:
 
 @ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
+    """Головна сторінка: запускає build_context і рендерить шаблон analysis/index.html"""
     context = build_context(request)
     return render(request, "analysis/index.html", context)
 
 
 def export_csv(request: HttpRequest) -> HttpResponse:
+    """Формує та повертає CSV-файл із повним результатом аналізу"""
     context = build_context(request)
     analysis = context["analysis"]
 
