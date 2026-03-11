@@ -68,16 +68,21 @@ def build_context(request: HttpRequest) -> dict[str, Any]:
     signal_values: list[float] = []
     upload_error: str = ""
 
-    uploaded_file = request.FILES.get("signal_file") if request.method == "POST" else None
+    uploaded_file = (
+        request.FILES.get("signal_file") if request.method == "POST" else None
+    )
     if uploaded_file:
         try:
             raw_bytes: bytes = uploaded_file.read()
             # Try multiple encodings; parse inline to avoid stale-import issues
             import re as _re
+
             for _enc in ("utf-8", "utf-8-sig", "cp1251", "latin-1"):
                 try:
                     _text = raw_bytes.decode(_enc)
-                    _tokens = _re.findall(r"[-+]?\d+[,.]\d+E[-+]?\d+", _text, flags=_re.IGNORECASE)
+                    _tokens = _re.findall(
+                        r"[-+]?\d+[,.]\d+E[-+]?\d+", _text, flags=_re.IGNORECASE
+                    )
                     _parsed = [float(t.replace(",", ".")) for t in _tokens]
                     if _parsed:
                         signal_values = _parsed
@@ -92,8 +97,12 @@ def build_context(request: HttpRequest) -> dict[str, Any]:
     if not signal_values:
         signal_values = load_default_signal()
 
-    coverage = parse_coverage(request.GET.get("p") or request.POST.get("p"), default=DEFAULT_CONFIDENCE)
-    duration = parse_duration(request.GET.get("duration") or request.POST.get("duration"), default=60.0)
+    coverage = parse_coverage(
+        request.GET.get("p") or request.POST.get("p"), default=DEFAULT_CONFIDENCE
+    )
+    duration = parse_duration(
+        request.GET.get("duration") or request.POST.get("duration"), default=60.0
+    )
     windows_raw = request.GET.get("windows") or request.POST.get("windows")
     windows = parse_windows(windows_raw)
 
@@ -109,7 +118,11 @@ def build_context(request: HttpRequest) -> dict[str, Any]:
     else:
         first_hist_window = ""
 
-    selected_hist_window = request.GET.get("hist_window") or request.POST.get("hist_window") or first_hist_window
+    selected_hist_window = (
+        request.GET.get("hist_window")
+        or request.POST.get("hist_window")
+        or first_hist_window
+    )
     if selected_hist_window not in analysis["histograms"]:
         selected_hist_window = first_hist_window
 
@@ -155,18 +168,24 @@ def export_csv(request: HttpRequest) -> HttpResponse:
     analysis = context["analysis"]
 
     response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = "attachment; filename=calibrator_h4_6_methodical_analysis.csv"
+    response["Content-Disposition"] = (
+        "attachment; filename=calibrator_h4_6_methodical_analysis.csv"
+    )
     response.write("\ufeff")
 
     writer = csv.writer(response)
 
     writer.writerow(["Параметр", "Значення"])
     writer.writerow(["Кількість відліків", int(analysis["raw_stats"]["count"])])
-    writer.writerow(["Середній період дискретизації, хв", f"{analysis['sample_period_min']:.4f}"])
+    writer.writerow(
+        ["Середній період дискретизації, хв", f"{analysis['sample_period_min']:.4f}"]
+    )
     writer.writerow([])
 
     writer.writerow(["Таблиця 1: Статистичні характеристики"])
-    writer.writerow(["Показник", "Для вихідного сигналу", "Для відносного відхилення (ppm)"])
+    writer.writerow(
+        ["Показник", "Для вихідного сигналу", "Для відносного відхилення (ppm)"]
+    )
     for row in analysis["table1_rows"]:
         writer.writerow([row["label"], f"{row['raw']:.9f}", f"{row['ppm']:.9f}"])
 
@@ -193,7 +212,9 @@ def export_csv(request: HttpRequest) -> HttpResponse:
     writer.writerow(["Таблиця 4: Осереднена U0.95(t)"])
     writer.writerow(["Вікно, хв", "-0.95, ppm", "+0.95, ppm"])
     for row in analysis["table4_rows"]:
-        writer.writerow([f"{row['window']}", f"{row['lower']:.6f}", f"{row['upper']:.6f}"])
+        writer.writerow(
+            [f"{row['window']}", f"{row['lower']:.6f}", f"{row['upper']:.6f}"]
+        )
 
     writer.writerow([])
     writer.writerow(["Поліном 3-го порядку"])
