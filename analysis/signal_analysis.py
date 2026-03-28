@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, cast
 import csv
 
+import numpy as np
+
 DEFAULT_WINDOWS: list[float] = [0.5, 1, 2, 5, 10, 30, 60]
 DEFAULT_CONFIDENCE: float = 0.95
 
@@ -30,11 +32,7 @@ _TABLE1_CONFIG: list[tuple[str, str]] = [
 
 
 class SignalParser:
-    """
-    Завантажує та розбирає сирий текстовий сигнал у список чисел float.
-
-    Підтримувані формати числа: «1,234567E+00» або «1.234567E+00».
-    """
+    """Завантажує та розбирає сирий текстовий сигнал у список чисел float"""
 
     _PATTERN: re.Pattern[str] = re.compile(r"[-+]?\d+[,.]\d+E[-+]?\d+", re.IGNORECASE)
     _ENCODINGS: tuple[str, ...] = ("utf-8", "utf-8-sig", "cp1251", "latin-1")
@@ -73,149 +71,118 @@ class SignalParser:
 
 class SignalStats:
     """
-    Обчислює і зберігає статистичні характеристики набору значень
+    Обчислює і зберігає статистичні характеристики набору значень.
+    Використовує модуль Statistics бібліотеки NumPy для всіх обчислень.
     """
 
     def __init__(self, values: list[float]) -> None:
-        self._values: list[float] = [float(v) for v in values]
-        self._sorted: list[float] | None = None
+        self._arr: np.ndarray = np.array(values, dtype=np.float64)
 
+    # --- сумісний допоміжний метод (використовується зовнішнім кодом) ---
     @staticmethod
     def sort(data: list[float]) -> list[float]:
-        """Сортує список значень за зростанням"""
-        if len(data) <= 1:
-            return data.copy()
-        pivot = data[len(data) // 2]
-        less: list[float] = []
-        equal: list[float] = []
-        greater: list[float] = []
-        for v in data:
-            if v < pivot:
-                less.append(v)
-            elif v > pivot:
-                greater.append(v)
-            else:
-                equal.append(v)
-        return SignalStats.sort(less) + equal + SignalStats.sort(greater)
+        """Сортує список значень за зростанням (делегує до NumPy)"""
+        return list(np.sort(np.array(data, dtype=np.float64)))
 
     @property
     def _sorted_values(self) -> list[float]:
-        if self._sorted is None:
-            self._sorted = SignalStats.sort(self._values)
-        return self._sorted
+        return list(np.sort(self._arr))
 
     @property
     def count(self) -> int:
         """Повертає кількість відліків у наборі"""
-        return len(self._values)
+        return int(self._arr.size)
 
     @property
     def mean(self) -> float:
-        """Повертає середнє значення або 0.0 для порожнього набору"""
-        n = self.count
-        if n == 0:
+        """Повертає середнє значення (np.mean)"""
+        if self._arr.size == 0:
             return 0.0
-        total = 0.0
-        for v in self._values:
-            total += v
-        return total / float(n)
+        return float(np.mean(self._arr))
 
     @property
     def median(self) -> float:
-        """Повертає медіану або 0.0 для порожнього набору"""
-        sv = self._sorted_values
-        n = len(sv)
-        if n == 0:
+        """Повертає медіану (np.median)"""
+        if self._arr.size == 0:
             return 0.0
-        mid = n // 2
-        return sv[mid] if n % 2 == 1 else (sv[mid - 1] + sv[mid]) / 2.0
+        return float(np.median(self._arr))
 
     @property
     def mode(self) -> float:
-        """Повертає моду або 0.0 для порожнього набору"""
-        if not self._values:
+        """Повертає моду — найчастіше значення (np.unique + argmax)"""
+        if self._arr.size == 0:
             return 0.0
-        frequencies: dict[float, int] = {}
-        for v in self._values:
-            frequencies[v] = frequencies.get(v, 0) + 1
-        mode_val = self._values[0]
-        max_cnt = 0
-        for v, cnt in frequencies.items():
-            if cnt > max_cnt or (cnt == max_cnt and v < mode_val):
-                max_cnt = cnt
-                mode_val = v
-        return mode_val
+        values, counts = np.unique(self._arr, return_counts=True)
+        return float(values[np.argmax(counts)])
 
     @property
     def minimum(self) -> float:
-        """Повертає мінімум або 0.0 для порожнього набору"""
-        sv = self._sorted_values
-        return sv[0] if sv else 0.0
+        """Повертає мінімум (np.min)"""
+        if self._arr.size == 0:
+            return 0.0
+        return float(np.min(self._arr))
 
     @property
     def maximum(self) -> float:
-        """Повертає максимум або 0.0 для порожнього набору"""
-        sv = self._sorted_values
-        return sv[-1] if sv else 0.0
+        """Повертає максимум (np.max)"""
+        if self._arr.size == 0:
+            return 0.0
+        return float(np.max(self._arr))
 
     @property
     def data_range(self) -> float:
-        """Повертає розмах (макс - мін) або 0.0 для порожнього набору"""
-        return self.maximum - self.minimum
+        """Повертає розмах (np.ptp = max - min)"""
+        if self._arr.size == 0:
+            return 0.0
+        return float(np.ptp(self._arr))
 
     @property
     def total(self) -> float:
-        """Повертає суму всіх відліків або 0.0 для порожнього набору"""
-        acc = 0.0
-        for v in self._values:
-            acc += v
-        return acc
+        """Повертає суму (np.sum)"""
+        return float(np.sum(self._arr))
 
     @property
     def variance(self) -> float:
-        """Повертає дисперсію вибірки або 0.0 для набору з менше ніж 2 відліками"""
-        n = self.count
-        if n < 2:
+        """Повертає дисперсію вибірки (np.var, ddof=1)"""
+        if self._arr.size < 2:
             return 0.0
-        m = self.mean
-        acc = 0.0
-        for v in self._values:
-            d = v - m
-            acc += d * d
-        return acc / float(n - 1)
+        return float(np.var(self._arr, ddof=1))
 
     @property
     def std(self) -> float:
-        """Повертає стандартне відхилення або 0.0 для набору з менше ніж 2 відліками"""
-        var = self.variance
-        return math.sqrt(var) if var > 0.0 else 0.0
+        """Повертає стандартне відхилення (np.std, ddof=1)"""
+        if self._arr.size < 2:
+            return 0.0
+        return float(np.std(self._arr, ddof=1))
 
     @property
     def sem(self) -> float:
-        """Повертає стандартну помилку або 0.0 для набору з менше ніж 2 відліками"""
-        n = self.count
-        return self.std / math.sqrt(float(n)) if n > 0 else 0.0
+        """Повертає стандартну помилку (std / sqrt(n))"""
+        n = self._arr.size
+        if n < 2:
+            return 0.0
+        return float(np.std(self._arr, ddof=1) / np.sqrt(n))
 
     @property
     def skewness(self) -> float:
-        """Повертає асиметричність або 0.0 для набору з менше ніж 3 відліками або нульовим std"""
-        n = self.count
+        """Повертає асиметричність (виправлена формула Фішера)"""
+        n = self._arr.size
         s = self.std
         if n < 3 or s == 0.0:
             return 0.0
         m = self.mean
-        acc = sum(((v - m) / s) ** 3 for v in self._values)
+        acc = float(np.sum(((self._arr - m) / s) ** 3))
         return (float(n) / float((n - 1) * (n - 2))) * acc
 
     @property
     def excess(self) -> float:
-        """Повертає ексцес або 0.0 для набору з менше ніж 4 відліками або нульовим std"""
-        n = self.count
+        """Повертає ексцес (виправлена формула Фішера)"""
+        n = self._arr.size
         s = self.std
         if n < 4 or s == 0.0:
             return 0.0
         m = self.mean
-        acc = sum(((v - m) / s) ** 4 for v in self._values)
+        acc = float(np.sum(((self._arr - m) / s) ** 4))
         numerator = float(n * (n + 1))
         denominator = float((n - 1) * (n - 2) * (n - 3))
         correction = float(3 * (n - 1) ** 2) / float((n - 2) * (n - 3))
@@ -241,14 +208,15 @@ class SignalStats:
 
 
 class HistogramData:
-    """
-    Будує гістограму з цілочисельними інтервалами шириною 1.
+    """Будує гістограму з цілочисельними інтервалами шириною 1"""
 
-    Нормована колонка HN = count_i / max_count → вісь Y в [0, 1].
-    """
-
-    def __init__(self, values: list[float]) -> None:
+    def __init__(
+        self,
+        values: list[float],
+        fixed_range: tuple[float, float] | None = None,
+    ) -> None:
         self._values = values
+        self._fixed_range = fixed_range
         self.counts: list[int] = []
         self.edges: list[float] = []
         self.relative: list[float] = []
@@ -265,8 +233,12 @@ class HistogramData:
         min_val = sv[0]
         max_val = sv[-1]
 
-        bin_start = int(math.floor(min_val))
-        bin_end = int(math.ceil(max_val))
+        if self._fixed_range is not None:
+            bin_start = int(math.floor(self._fixed_range[0]))
+            bin_end = int(math.ceil(self._fixed_range[1]))
+        else:
+            bin_start = int(math.floor(min_val))
+            bin_end = int(math.ceil(max_val))
         if bin_end <= bin_start:
             bin_end = bin_start + 1
 
@@ -350,12 +322,7 @@ class HistogramData:
 
 
 class WindowAnalyzer:
-    """
-    Аналізує відносне відхилення (ppm) у заданому часовому вікні.
-
-    Розбиває ряд на рівні сегменти і для кожного будує гістограму
-    та обчислює межі довірчого інтервалу.
-    """
+    """Аналізує відносне відхилення (ppm) у заданому часовому вікні"""
 
     def __init__(
         self,
@@ -383,9 +350,12 @@ class WindowAnalyzer:
         segment_bounds: list[dict[str, float]] = []
         segment_histograms: list[dict[str, Any]] = []
 
+        level = 1.0 - self._coverage  # наприклад, 0.05 для P=0.95
         for seg in segments:
             hist = HistogramData(seg)
-            lower, upper = hist.coverage_bounds(self._coverage)
+            c = hist.crossings(level)
+            lower = c["first_x"] if c["first_x"] is not None else 0.0
+            upper = c["last_x"] if c["last_x"] is not None else 0.0
             segment_histograms.append(hist.to_dict())
             segment_bounds.append(
                 {"lower": lower, "upper": upper, "width": upper - lower}
@@ -408,12 +378,7 @@ class WindowAnalyzer:
 
 
 class PolynomialFitter:
-    """
-    Апроксимує набір точок поліномом до 3-го ступеня методом МНК.
-
-    Коефіцієнти знаходяться через розв'язання нормальних рівнянь
-    методом Гаусса (без використання numpy).
-    """
+    """Апроксимує набір точок поліномом до 3-го ступеня методом МНК"""
 
     def __init__(
         self, times: list[float], values: list[float], max_degree: int = 3
@@ -533,13 +498,7 @@ class PolynomialFitter:
 
 
 class CalibratorAnalysis:
-    """
-    Повний аналіз вихідного сигналу калібратора Н4-6.
-
-    Використовує SignalStats, HistogramData, WindowAnalyzer та
-    PolynomialFitter для обчислення всіх характеристик, що збігаються
-    з форматом services.build_analysis().
-    """
+    """Повний аналіз вихідного сигналу калібратора Н4-6"""
 
     def __init__(
         self,
@@ -622,6 +581,63 @@ class CalibratorAnalysis:
                 seg_30_a["crossings"]["last_x"], seg_30_b["crossings"]["last_x"]
             ),
             "level": level,
+            "half_duration_min": self._duration / 2.0,
+        }
+
+    def build_flexible_interval_analysis(
+        self,
+        ppm: list[float],
+        interval_minutes: int,
+        sub_interval: int,
+        level: float = 0.1,
+    ) -> dict[str, Any]:
+        """Аналізує конкретний підінтервал заданої тривалості"""
+        n = len(ppm)
+        if n == 0 or self._duration <= 0:
+            empty_stats = SignalStats([]).to_dict()
+            empty_hist = HistogramData([]).to_dict()
+            return {
+                "interval_minutes": interval_minutes,
+                "sub_interval": 1,
+                "max_sub_intervals": 1,
+                "from_value": 1,
+                "to_value": 0,
+                "points_count": 0,
+                "stats": empty_stats,
+                "deviations": [],
+                "histogram": empty_hist,
+                "crossings": {"first_x": None, "last_x": None},
+            }
+
+        points_per_interval = max(1, n * interval_minutes // int(self._duration))
+        max_subs = max(1, n // points_per_interval)
+
+        sub_interval = max(1, min(sub_interval, max_subs))
+
+        start = (sub_interval - 1) * points_per_interval
+        end = start + points_per_interval
+        segment = ppm[start:end]
+
+        seg_stats = SignalStats(segment)
+        stats = seg_stats.to_dict()
+        mean = seg_stats.mean
+        deviations = [v - mean for v in segment]
+
+        global_min = min(ppm)
+        global_max = max(ppm)
+        hist = HistogramData(deviations, fixed_range=(global_min, global_max))
+
+        return {
+            "interval_minutes": interval_minutes,
+            "sub_interval": sub_interval,
+            "max_sub_intervals": max_subs,
+            "from_value": start + 1,
+            "to_value": end,
+            "points_count": len(segment),
+            "stats": stats,
+            "deviations": deviations,
+            "histogram": hist.to_dict(),
+            "crossings": hist.crossings(level),
         }
 
     def build_table3(
@@ -754,7 +770,7 @@ class CalibratorAnalysis:
             "histograms": histograms,
             "polynomial": polynomial,
             "global_histogram": HistogramData(ppm).to_dict(),
-            "interval_analysis": self.build_interval_analysis(ppm),
+            "interval_analysis": self.build_interval_analysis(ppm, level=1.0 - self._coverage),
         }
 
 
