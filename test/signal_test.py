@@ -30,3 +30,9 @@ def test_signal_analysis_count():
 def test_signal_analysis_min():
     """Test if min function returns correct minimum value."""
     assert signal.minimum == 1
+
+
+# TODO: Do I need to test min and count functions separately if I already have a test for their ratio?
+def test_count_and_min():
+    """Test if count and min functions return correct values."""
+    assert signal.count / signal.minimum == 5
