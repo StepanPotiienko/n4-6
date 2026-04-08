@@ -78,10 +78,9 @@ class SignalStats:
     def __init__(self, values: list[float]) -> None:
         self._arr: np.ndarray = np.array(values, dtype=np.float64)
 
-    # --- сумісний допоміжний метод (використовується зовнішнім кодом) ---
     @staticmethod
     def sort(data: list[float]) -> list[float]:
-        """Сортує список значень за зростанням (делегує до NumPy)"""
+        """Сортує список значень за зростанням"""
         return list(np.sort(np.array(data, dtype=np.float64)))
 
     @property
@@ -542,24 +541,35 @@ class CalibratorAnalysis:
             return [0.0] * len(values)
         return [(v - m) / m * 1_000_000.0 for v in values]
 
-    def build_interval_analysis(
-        self, ppm: list[float], level: float = 0.1
-    ) -> dict[str, Any]:
-        """Повертає словник з аналізом інтервалів для всього сигналу та його половин"""
+    def build_interval_analysis(self, level: float = 0.1) -> dict[str, Any]:
+        """Повертає словник з аналізом інтервалів для всього сигналу та його половин/шостин"""
+
+        def _ppm_from_raw(vals: list[float]) -> list[float]:
+            if not vals:
+                return []
+            m = SignalStats(vals).mean
+            if m == 0.0:
+                return [0.0] * len(vals)
+            return [(v - m) / m * 1_000_000.0 for v in vals]
 
         def _analyse(vals: list[float]) -> dict[str, Any]:
-            stats = SignalStats(vals)
-            hist = HistogramData(vals)
+            ppm_vals = _ppm_from_raw(vals)
+            stats = SignalStats(ppm_vals)
+            hist = HistogramData(ppm_vals)
             return {
                 "stats": stats.to_dict(),
                 "histogram": hist.to_dict(),
                 "crossings": hist.crossings(level),
             }
 
-        seg_60 = _analyse(ppm)
-        half = len(ppm) // 2
-        seg_30_a = _analyse(ppm[:half])
-        seg_30_b = _analyse(ppm[half : 2 * half])
+        raw = self._signal
+        seg_60 = _analyse(raw)
+        half = len(raw) // 2
+        seg_30_a = _analyse(raw[:half])
+        seg_30_b = _analyse(raw[half : 2 * half])
+
+        sixth = len(raw) // 6
+        segs_10min = [_analyse(raw[i * sixth : (i + 1) * sixth]) for i in range(6)]
 
         def _avg_opt(a: float | None, b: float | None) -> float | None:
             if a is None and b is None:
@@ -574,6 +584,7 @@ class CalibratorAnalysis:
             "seg_60": seg_60,
             "seg_30_a": seg_30_a,
             "seg_30_b": seg_30_b,
+            "segs_10min": segs_10min,
             "avg_left": _avg_opt(
                 seg_30_a["crossings"]["first_x"], seg_30_b["crossings"]["first_x"]
             ),
@@ -582,17 +593,18 @@ class CalibratorAnalysis:
             ),
             "level": level,
             "half_duration_min": self._duration / 2.0,
+            "tenth_duration_min": self._duration / 6.0,
         }
 
     def build_flexible_interval_analysis(
         self,
-        ppm: list[float],
         interval_minutes: int,
         sub_interval: int,
         level: float = 0.1,
     ) -> dict[str, Any]:
         """Аналізує конкретний підінтервал заданої тривалості"""
-        n = len(ppm)
+        raw = self._signal
+        n = len(raw)
         if n == 0 or self._duration <= 0:
             empty_stats = SignalStats([]).to_dict()
             empty_hist = HistogramData([]).to_dict()
@@ -616,16 +628,17 @@ class CalibratorAnalysis:
 
         start = (sub_interval - 1) * points_per_interval
         end = start + points_per_interval
-        segment = ppm[start:end]
+        segment = raw[start:end]
 
-        seg_stats = SignalStats(segment)
+        seg_mean = SignalStats(segment).mean
+        if seg_mean == 0.0:
+            ppm_vals: list[float] = [0.0] * len(segment)
+        else:
+            ppm_vals = [(v - seg_mean) / seg_mean * 1_000_000.0 for v in segment]
+
+        seg_stats = SignalStats(ppm_vals)
         stats = seg_stats.to_dict()
-        mean = seg_stats.mean
-        deviations = [v - mean for v in segment]
-
-        global_min = min(ppm)
-        global_max = max(ppm)
-        hist = HistogramData(deviations, fixed_range=(global_min, global_max))
+        hist = HistogramData(ppm_vals)
 
         return {
             "interval_minutes": interval_minutes,
@@ -635,7 +648,7 @@ class CalibratorAnalysis:
             "to_value": end,
             "points_count": len(segment),
             "stats": stats,
-            "deviations": deviations,
+            "deviations": ppm_vals,
             "histogram": hist.to_dict(),
             "crossings": hist.crossings(level),
         }
@@ -770,7 +783,9 @@ class CalibratorAnalysis:
             "histograms": histograms,
             "polynomial": polynomial,
             "global_histogram": HistogramData(ppm).to_dict(),
-            "interval_analysis": self.build_interval_analysis(ppm, level=1.0 - self._coverage),
+            "interval_analysis": self.build_interval_analysis(
+                level=1.0 - self._coverage
+            ),
         }
 
 

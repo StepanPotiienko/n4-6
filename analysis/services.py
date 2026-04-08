@@ -38,6 +38,7 @@ __all__ = [
     "build_polynomial_from_table4",
     "build_table1_rows",
     "build_analysis",
+    "build_flexible_interval",
 ]
 
 
@@ -124,11 +125,11 @@ def bounds_from_histogram(
 
 
 def build_interval_analysis(
-    relative_ppm: list[float], level: float = 0.1
+    signal_values: list[float], level: float = 0.1, total_duration_min: float = 60.0
 ) -> dict[str, Any]:
-    """Аналізує розподіл перетину ppm для 60-хв сегмента та двох половин"""
-    analysis = CalibratorAnalysis(relative_ppm)
-    return analysis.build_interval_analysis(relative_ppm, level)
+    """Аналізує розподіл перетину ppm для 60-хв сегмента та двох половин/шостин"""
+    analysis = CalibratorAnalysis(signal_values, total_duration_min=total_duration_min)
+    return analysis.build_interval_analysis(level)
 
 
 def build_table3_rows(
@@ -236,3 +237,20 @@ def build_analysis(
         coverage=coverage,
         windows=windows,
     ).run()
+
+
+def build_flexible_interval(
+    signal_values: list[float],
+    interval_minutes: int = 60,
+    sub_interval: int = 1,
+    coverage: float = DEFAULT_CONFIDENCE,
+    total_duration_min: float = 60.0,
+) -> dict[str, Any]:
+    """Обчислює статистику та гістограму для конкретного підінтервалу"""
+    ca = CalibratorAnalysis(
+        signal_values=signal_values,
+        total_duration_min=total_duration_min,
+        coverage=coverage,
+    )
+    level = 1.0 - coverage
+    return ca.build_flexible_interval_analysis(interval_minutes, sub_interval, level)

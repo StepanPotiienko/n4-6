@@ -241,6 +241,62 @@ canvas {
     font-size: 0.88rem;
 }
 
+.interval-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 16px;
+}
+
+.interval-tab {
+    padding: 10px 20px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 10px 10px 0 0;
+    background: #f8faff;
+    cursor: pointer;
+    font-family: "Manrope", sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--muted);
+    transition: background 0.15s, color 0.15s;
+}
+
+.interval-tab.active {
+    background: var(--card);
+    color: var(--accent);
+    border-bottom: 2px solid var(--card);
+    margin-bottom: -2px;
+}
+
+.interval-tab:hover:not(.active) {
+    background: #eef2ff;
+}
+
+.sub-interval-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.sub-interval-controls label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.sub-interval-controls select {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: "Manrope", sans-serif;
+    font-size: 0.9rem;
+}
+
 @media (max-width: 820px) {
     .chart-grid {
         grid-template-columns: 1fr;
